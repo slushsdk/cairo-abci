@@ -21,7 +21,7 @@ path = "src/application/kvstore/main.rs"
 required-features = [ "binary", "kvstore-app" ]
 
 [features]
-default = ["flex-error/std", "flex-error/eyre_tracer"]
+default = ["flex-error/std", "flex-error/eyre_tracer", "kvstore-app"]
 client = []
 echo-app = []
 kvstore-app = []
@@ -38,3 +38,8 @@ tracing = { version = "0.1", default-features = false }
 flex-error = { version = "0.4.4", default-features = false }
 structopt = { version = "0.3", optional = true, default-features = false }
 tracing-subscriber = { version = "0.2", optional = true, default-features = false }
+anyhow = "1.0.66"
+cairo_runner = { git = "https://github.com/starkware-libs/cairo", rev = "8d30350ae8dee2bcd3ed2612e962b02a8012eb22", package = "runner" }
+cairo_compiler = { git = "https://github.com/starkware-libs/cairo", rev = "8d30350ae8dee2bcd3ed2612e962b02a8012eb22", package = "compiler" }
+cairo_sierra_generator = { git = "https://github.com/starkware-libs/cairo", rev = "8d30350ae8dee2bcd3ed2612e962b02a8012eb22", package = "sierra_generator" }
+cairo_diagnostics = { git = "https://github.com/starkware-libs/cairo", rev = "8d30350ae8dee2bcd3ed2612e962b02a8012eb22", package = "diagnostics" }

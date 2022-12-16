@@ -14,6 +14,17 @@ use tracing::{debug, info};
 
 use crate::{codec::MAX_VARINT_LENGTH, Application, Error};
 
+use std::path::Path;
+
+use anyhow::Context;
+use cairo_compiler::db::RootDatabase;
+use cairo_compiler::diagnostics::check_and_eprint_diagnostics;
+use cairo_compiler::project::setup_project;
+use cairo_diagnostics::ToOption;
+use cairo_runner::SierraCasmRunner;
+use cairo_sierra_generator::db::SierraGenGroup;
+use cairo_sierra_generator::replace_ids::replace_sierra_ids_in_program;
+
 /// In-memory, hashmap-backed key/value store ABCI application.
 ///
 /// This structure effectively just serves as a handle to the actual key/value
@@ -120,6 +131,66 @@ impl Application for KeyValueStoreApp {
         let (result_tx, result_rx) = channel();
         channel_send(&self.cmd_tx, Command::GetInfo { result_tx }).unwrap();
         let (last_block_height, last_block_app_hash) = channel_recv(&result_rx).unwrap();
+
+        let path = "cairo/main.cairo";
+        let available_gas = None;
+        let mut db_val = RootDatabase::default();
+        let db = &mut db_val;
+        let main_crate_ids_result = setup_project(db, Path::new(&path));
+
+        let main_crate_ids = match main_crate_ids_result {
+            Ok(ids) => ids,
+            Err(e) => {
+                panic!("Failed to setup project: {}", e);
+            },
+        };
+
+        if check_and_eprint_diagnostics(db) {
+            panic!("failed to compile: {}", path)
+        }
+
+        let sierra_program_result = db
+            .get_sierra_program(main_crate_ids)
+            .to_option()
+            .with_context(|| "Compilation failed without any diagnostics.");
+
+        let sierra_program = match sierra_program_result {
+            Ok(program) => program,
+            Err(e) => {
+                panic!("Failed to get sierra program: {}", e);
+            },
+        };
+        let runner_result =
+            SierraCasmRunner::new(replace_sierra_ids_in_program(db, &sierra_program), true)
+                .with_context(|| "Failed setting up runner.");
+        let runner = match runner_result {
+            Ok(runner) => runner,
+            Err(e) => {
+                panic!("Failed to setup runner: {}", e);
+            },
+        };
+        let result_result = runner
+            .run_function("::main", &[], &available_gas)
+            .with_context(|| "Failed to run the function.");
+
+        let result = match result_result {
+            Ok(result) => result,
+            Err(e) => {
+                panic!("Failed to run function: {}", e);
+            },
+        };
+
+        match result.value {
+            cairo_runner::RunResultValue::Success(values) => {
+                println!("Run completed successfully, returning {values:?}")
+            },
+            cairo_runner::RunResultValue::Panic(values) => {
+                println!("Run panicked with err values: {values:?}")
+            },
+        }
+        if let Some(gas) = result.gas_counter {
+            println!("Remaining gas: {gas}");
+        }
 
         ResponseInfo {
             data: "kvstore-rs".to_string(),
